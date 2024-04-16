@@ -1,6 +1,8 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
+using Cysharp.Threading.Tasks;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -37,10 +39,22 @@ public class DynamicRenderTexture : MonoBehaviour
     [SerializeField] private Camera _targetCamera;
     [SerializeField] private List<TargetState> _targetRenderers = new List<TargetState>();
     [SerializeField] private List<RawImage> _targetRaws = new List<RawImage>();
+    [SerializeField] private UpdateMode updateMode;
 
-    [SerializeField] private bool isOneShot;
+    //
+    enum UpdateMode
+    {
+        Default,
+        OneShot,
+        Manual
+    }
 
-    //生成されたRenderTexture
+    public delegate float CalculateAction(Color color);
+
+    //非同期計算中フラグ
+    public bool IsCalculatingRate { get; set; } = false;
+
+    //レンダーテクスチャ
     public RenderTexture InstanceRenderTexture { get; set; }
 
 
@@ -72,13 +86,74 @@ public class DynamicRenderTexture : MonoBehaviour
         }
 
 
-        if (isOneShot)
+        switch (updateMode)
         {
-            _targetCamera.Render();
-            _targetCamera.gameObject.SetActive(false);
+            case UpdateMode.Default:
+                break;
+            case UpdateMode.OneShot:
+                UpdateRender();
+                _targetCamera.enabled = false;
+                _targetCamera.gameObject.SetActive(false);
+                break;
+            case UpdateMode.Manual:
+                _targetCamera.enabled = false;
+                break;
         }
     }
 
+    /// <summary>
+    /// 現在のカラーバッファのコピーを取得するサンプル関数
+    /// 毎フレーム取得は重いので非推奨
+    /// </summary>
+    private Color[] GetColorBuffer()
+    {
+        var texture2D = new Texture2D(InstanceRenderTexture.width, InstanceRenderTexture.height);
+        RenderTexture.active = InstanceRenderTexture;
+        texture2D.ReadPixels(new Rect(0, 0, InstanceRenderTexture.width, InstanceRenderTexture.height), 0, 0);
+        texture2D.Apply();
+        RenderTexture.active = null;
+        var colorBuffer = texture2D.GetPixels(0, 0, InstanceRenderTexture.width, InstanceRenderTexture.height);
+        Destroy(texture2D);
+
+        return colorBuffer;
+    }
+
+
+    /// <summary>
+    /// テクスチャの中身を解析する場合のサンプル関数
+    /// </summary>
+    /// <param name="loopForOneFrame">１フレームあたりどれくらい計算を回すか、時間基準で良い感じにできた方が良いかも</param>
+    /// <param name="calculateAction">計算の内容</param>
+    /// <param name="onFillRateCalculated">計算結果の受け取り</param>
+    /// <returns></returns>
+    public async UniTaskVoid GetFillRate(int loopForOneFrame, CalculateAction calculateAction,
+        Action<float, int> onFillRateCalculated)
+    {
+        IsCalculatingRate = true;
+        var colorBuffer = GetColorBuffer();
+        var rate = 0f;
+        for (var i = 0; i < colorBuffer.Length; i++)
+        {
+            rate += calculateAction(colorBuffer[i]);
+            
+            if (i % loopForOneFrame == loopForOneFrame - 1)
+            {
+                await UniTask.Yield(PlayerLoopTiming.Update);
+            }
+        }
+
+        onFillRateCalculated(rate, colorBuffer.Length);
+        IsCalculatingRate = false;
+    }
+
+
+    /// <summary>
+    /// カメラの描画更新
+    /// </summary>
+    public void UpdateRender()
+    {
+        _targetCamera.Render();
+    }
 
     /// <summary>
     /// 解放

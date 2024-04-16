@@ -75,7 +75,7 @@ Material:
     m_Ints: []
     m_Floats:
     - _Height: 1
-    - _InkAlpha: 90
+    - _InkAlpha: 45
     - _Metal: 0.1
     - _Normal: 1
     - _QueueControl: 0
