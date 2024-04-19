@@ -8,6 +8,8 @@ public class CameraGun : MonoBehaviour
 {
     [SerializeField] public Bullet prefab; // Specify your prefab with a Rigidbody here
     [SerializeField] private float shotSpeed = 100f;
+    [SerializeField] private int shotgunCount = 5; // the number of bullets to be scattered
+    [SerializeField] private float scatterAngle = 15.0f; // scatter angle for "shotgun" effect
 
     private List<Bullet> PrefabPool { get; } = new List<Bullet>();
 
@@ -21,28 +23,48 @@ public class CameraGun : MonoBehaviour
 
     private void Update()
     {
-        if (!Input.GetMouseButtonDown(0)) return;
+        if (Input.GetMouseButtonDown(0)) // Left Click
+        {
+            var ray = Camera.main.ScreenPointToRay(Input.mousePosition);
 
-        var ray = Camera.main.ScreenPointToRay(Input.mousePosition);
+            if (Physics.Raycast(ray, out var hit))
+            {
+                var instance = GetPrefabFromPool();
+                if (instance == null) instance = CreatePrefab();
 
-        if (!Physics.Raycast(ray, out var hit)) return;
-        var instance = GetPrefabFromPool();
-        if (instance == null) instance = CreatePrefab();
+                var emitPoint = transform.position + new Vector3(0f, -1f, 0f);
+                instance.transform.position = emitPoint; 
+                instance.SetActive(true); 
 
+                var direction = hit.point - emitPoint; 
+                instance.Velocity = direction.normalized * shotSpeed;
+            }
+        }
+        else if (Input.GetMouseButtonDown(1)) // Right Click
+        {
+            var ray = Camera.main.ScreenPointToRay(Input.mousePosition);
 
-        var emitPoint = transform.position + new Vector3(0f, -1f, 0f);
-        instance.transform.position = emitPoint; // Start the prefab at the current transform position
-        instance.SetActive(true); // Ensure the prefab is active
+            if (Physics.Raycast(ray, out var hit))
+            {
+                var emitPoint = transform.position + new Vector3(0f, -1f, 0f);
+                var direction = hit.point - emitPoint;
+                for (int i = 0; i < shotgunCount; i++)
+                {
+                    var instance = GetPrefabFromPool();
+                    if (instance == null) instance = CreatePrefab();
 
-        var direction = hit.point - emitPoint; // Calculate the direction to the click
-        instance.Velocity = direction.normalized * shotSpeed; // Set velocity towards clicked position
+                    instance.transform.position = emitPoint; 
+                    instance.SetActive(true); 
+
+                    var rotatedDirection = Quaternion.Euler(0, -scatterAngle / 2 + scatterAngle / (shotgunCount - 1) * i, 0) * direction;
+                    instance.Velocity = rotatedDirection.normalized * shotSpeed;
+                }
+            }
+        }
     }
 
-    // Method for retrieving a prefab from the pool
     private Bullet GetPrefabFromPool()
     {
         return PrefabPool.FirstOrDefault(b => !b.gameObject.activeInHierarchy);
-
-        // If no inactive prefabs are found and the pool is full, return null
     }
 }
